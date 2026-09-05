@@ -1,0 +1,20 @@
+[project]
+name = "dev-tools"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Matthew Russell", email = "mbr4477@gmail.com" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "halo>=0.0.31",
+    "openai>=3.8.0",
+]
+
+[project.scripts]
+fix_clang_tidy = "dev_tools.fix_clang_tidy:main"
+
+[build-system]
+requires = ["uv_build>=0.9.22,<0.10.0"]
+build-backend = "uv_build"
