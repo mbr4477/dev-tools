@@ -1,6 +1,7 @@
 import asyncio
 import json
 import sys
+import os
 
 from openai import AsyncOpenAI
 from rich.console import Console, Group
@@ -15,13 +16,13 @@ class Agent:
     def __init__(
         self,
         model: str,
-        instructions: str,
         tools: list[Tool],
+        instructions: str | None = None,
         max_iters: int | None = None,
     ):
         self._model = model
-        self._instructions = instructions
         self._tools = {x.schema()["name"]: x for x in tools}
+        self._instructions = instructions
         self._max_iters = max_iters
 
     async def run(self, prompt: str):
@@ -94,16 +95,33 @@ class Agent:
                     working = True
 
 
-async def async_main(model: str, instructions: str, tools: list[Tool], prompt: str):
-    await Agent(model, instructions, tools).run(prompt)
+async def async_main(model: str, tools: list[Tool], instructions: str, prompt: str):
+    await Agent(model, tools, instructions).run(prompt)
 
 
 def main():
     import argparse
 
-    from dev_tools.tools import List, Search, Read
+    from dev_tools.tools import (
+        ListFiles,
+        SearchFiles,
+        ReadFile,
+        WriteFile,
+        UserTool,
+        ToolDef,
+    )
 
-    tools = {x.schema()["name"]: x for x in (List(), Search(), Read())}
+    if os.path.exists(".agent-tools.json"):
+        with open(".agent-tools.json", "r") as tool_file:
+            content = json.loads(tool_file.read())
+
+        tool_defs = [ToolDef.from_dict(x) for x in content]
+        user_tools = [UserTool(x) for x in tool_defs]
+
+    tools = {
+        x.schema()["name"]: x
+        for x in [ListFiles(), SearchFiles(), ReadFile(), WriteFile()] + user_tools
+    }
     tool_names = list(tools.keys())
 
     parser = argparse.ArgumentParser()
@@ -113,7 +131,7 @@ def main():
         help=f"comma separate list of allowed tools: {','.join(tool_names)}",
     )
 
-    ins_group = parser.add_mutually_exclusive_group(required=True)
+    ins_group = parser.add_mutually_exclusive_group(required=False)
     ins_group.add_argument("--instructions", "-I", type=str, help="agent instructions")
     ins_group.add_argument(
         "--instructions-file",
@@ -154,6 +172,6 @@ def main():
 
     asyncio.run(
         async_main(
-            args.model, instructions, [tools[x] for x in allowed_tool_names], prompt
+            args.model, [tools[x] for x in allowed_tool_names], instructions, prompt
         )
     )
