@@ -6,7 +6,7 @@ readme = "README.md"
 authors = [
     { name = "Matthew Russell", email = "mbr4477@gmail.com" }
 ]
-requires-python = ">=3.14"
+requires-python = ">=3.12"
 dependencies = [
     "halo>=0.0.31",
     "openai>=3.8.0",
