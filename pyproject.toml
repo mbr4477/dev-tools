@@ -15,7 +15,7 @@ dependencies = [
 
 [project.scripts]
 fix_clang_tidy = "dev_tools.fix_clang_tidy:main"
-impl_code = "dev_tools.impl_code:main"
+run_agent = "dev_tools.agent:main"
 
 [build-system]
 requires = ["uv_build>=0.9.22,<0.10.0"]

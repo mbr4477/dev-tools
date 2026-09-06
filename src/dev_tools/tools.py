@@ -11,11 +11,11 @@ class Tool:
         raise NotImplementedError()
 
 
-class ListFiles(Tool):
+class List(Tool):
     def schema(self) -> dict[str, Any]:
         return {
             "type": "function",
-            "name": "list_files",
+            "name": "list",
             "description": "List relative paths for files in the current working directory",
             "parameters": {
                 "type": "object",
@@ -49,11 +49,11 @@ class ListFiles(Tool):
         return ""
 
 
-class SearchFiles(Tool):
+class Search(Tool):
     def schema(self) -> dict[str, Any]:
         return {
             "type": "function",
-            "name": "search_files",
+            "name": "search",
             "description": "Get the relative path for files matching the filter regex and containing the search regex",
             "parameters": {
                 "type": "object",
@@ -98,11 +98,11 @@ class SearchFiles(Tool):
         return "Error: no output"
 
 
-class ReadFile(Tool):
+class Read(Tool):
     def schema(self) -> dict[str, Any]:
         return {
             "type": "function",
-            "name": "read_file",
+            "name": "read",
             "description": "Read the content of a file in the current working directory",
             "parameters": {
                 "type": "object",

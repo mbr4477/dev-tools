@@ -1,4 +1,6 @@
+import asyncio
 import json
+import sys
 
 from openai import AsyncOpenAI
 from rich.console import Console, Group
@@ -10,7 +12,15 @@ from dev_tools.tools import Tool
 
 
 class Agent:
-    def __init__(self, tools: list[Tool], max_iters: int | None = None):
+    def __init__(
+        self,
+        model: str,
+        instructions: str,
+        tools: list[Tool],
+        max_iters: int | None = None,
+    ):
+        self._model = model
+        self._instructions = instructions
         self._tools = {x.schema()["name"]: x for x in tools}
         self._max_iters = max_iters
 
@@ -28,14 +38,15 @@ class Agent:
             with Live("", console=console, vertical_overflow="visible") as live:
                 live.update(Spinner("dots", text="[yellow]Working...[/yellow]"))
                 response = await client.responses.create(
-                    model="gpt-5.6-luna",
+                    model=self._model,
                     tools=tools,
+                    instructions=self._instructions,
                     input=input_list,
                 )
                 if response.output_text:
                     live.update(Markdown(response.output_text))
                 else:
-                    live.update("[bold green]✔ Done[/bold green]")
+                    live.update("")
 
             # Assume we are done
             working = False
@@ -81,3 +92,68 @@ class Agent:
                             }
                         )
                     working = True
+
+
+async def async_main(model: str, instructions: str, tools: list[Tool], prompt: str):
+    await Agent(model, instructions, tools).run(prompt)
+
+
+def main():
+    import argparse
+
+    from dev_tools.tools import List, Search, Read
+
+    tools = {x.schema()["name"]: x for x in (List(), Search(), Read())}
+    tool_names = list(tools.keys())
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--allow",
+        type=str,
+        help=f"comma separate list of allowed tools: {','.join(tool_names)}",
+    )
+
+    ins_group = parser.add_mutually_exclusive_group(required=True)
+    ins_group.add_argument("--instructions", "-I", type=str, help="agent instructions")
+    ins_group.add_argument(
+        "--instructions-file",
+        type=str,
+        help="path to file containing agent instructions",
+    )
+
+    prompt_group = parser.add_mutually_exclusive_group(required=False)
+    prompt_group.add_argument("--prompt", "-p", type=str, help="prompt")
+    prompt_group.add_argument(
+        "--prompt-file", type=str, help="path to file containing prompt"
+    )
+
+    parser.add_argument(
+        "--model", "-m", type=str, help="model identifier", required=True
+    )
+
+    args = parser.parse_args()
+
+    allowed_tool_names = args.allow.split(",") if args.allow else []
+    for tool_name in allowed_tool_names:
+        if tool_name not in tools:
+            print(f"Error: unknown tool '{tool_name}'")
+            sys.exit(1)
+
+    instructions = None
+    if args.instructions_file:
+        with open(args.instructions_file, "r") as ins_file:
+            instructions = ins_file.read()
+    elif args.instructions:
+        instructions = args.instructions
+
+    prompt = None
+    if args.prompt:
+        prompt = args.prompt
+    else:
+        prompt = sys.stdin.read()
+
+    asyncio.run(
+        async_main(
+            args.model, instructions, [tools[x] for x in allowed_tool_names], prompt
+        )
+    )
