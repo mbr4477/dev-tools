@@ -77,9 +77,9 @@ class UserTool(Tool):
         # Safely substitute into args
         if self._tool_def.args is not None:
             if self._tool_def.shell:
-                cmd += [shlex.quote(x.format(**kwargs)) for x in self._tool_def.args]
+                cmd += [shlex.quote(x.format(**kwargs, cwd=os.getcwd())) for x in self._tool_def.args]
             else:
-                cmd += [x.format(**kwargs) for x in self._tool_def.args]
+                cmd += [x.format(**kwargs, cwd=os.getcwd()) for x in self._tool_def.args]
 
         if self._tool_def.shell:
             proc = await asyncio.create_subprocess_shell(
