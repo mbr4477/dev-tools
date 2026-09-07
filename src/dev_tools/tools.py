@@ -2,6 +2,7 @@ import asyncio
 import dataclasses
 import os
 import shlex
+import shutil
 from typing import Any, Self
 
 import jsonschema
@@ -301,5 +302,45 @@ class MakeDirs(Tool):
                 return f"Error: {relative_path} is disallowed because {prefix} is read-only"
 
         os.makedirs(path, exist_ok=True)
+
+        return "Success"
+
+class RemovePath(Tool):
+    def __init__(self, read_only_prefixes: list[str] | None = None):
+        super().__init__()
+        self._ro_prefixes = read_only_prefixes or []
+
+    def schema(self) -> dict[str, Any]:
+        return {
+            "type": "function",
+            "name": "remove_path",
+            "description": f"Remove a file or directory. Disallowed paths: {','.join(self._ro_prefixes)}",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "relative_path": {
+                        "type": "string",
+                        "description": "Path to remove",
+                    },
+                },
+                "required": ["relative_path"],
+            },
+        }
+
+    async def execute(self, relative_path: str) -> str:
+        path = os.path.abspath(relative_path)
+        if not path.startswith(os.getcwd()):
+            return (
+                f"Error: {relative_path} resolves outside the current working directory"
+            )
+
+        for prefix in self._ro_prefixes:
+            if relative_path.startswith(prefix):
+                return f"Error: {relative_path} is disallowed because {prefix} is read-only"
+
+        if os.path.isdir(path):
+            shutil.rmtree(path)
+        else:
+            os.remove(relative_path)
 
         return "Success"
