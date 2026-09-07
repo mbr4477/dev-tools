@@ -13,6 +13,8 @@ from dev_tools.tools import Tool
 
 
 class Agent:
+    """A class encapsulating a multi-turn agent with tool calling."""
+
     def __init__(
         self,
         model: str,
@@ -20,25 +22,35 @@ class Agent:
         instructions: str | None = None,
         max_iters: int | None = None,
     ):
+        """
+        Args:
+            model: The model identifier.
+            tools: A list of permitted tools.
+            instructions: The system prompt.
+            max_iters: The max number of agent API calls.
+        """
         self._model = model
         self._tools = {x.schema()["name"]: x for x in tools}
         self._instructions = instructions
         self._max_iters = max_iters
 
     async def run(self, prompt: str):
+        """Run the agent.
+
+        Args:
+            prompt: The initial prompt.
+        """
+        # Create the client, tool schemas, and initial input list
         client = AsyncOpenAI()
-
         tools = [x.schema() for x in self._tools.values()]
-
         input_list = [{"role": "user", "content": prompt}]
 
+        # Run the agentic loop
         working = True
         iters = 0
         console = Console()
-        elems = []
-        with Live("", console=console, vertical_overflow="visible") as live:
+        with console.status("[bold yellow]Working...[/]"):
             while working:
-                live.update(Group(*elems, Spinner("dots", text="[yellow]Working...[/yellow]")))
                 response = await client.responses.create(
                     model=self._model,
                     tools=tools,
@@ -46,8 +58,7 @@ class Agent:
                     input=input_list,
                 )
                 if response.output_text:
-                    elems.append(Markdown(response.output_text))
-                live.update(Group(*elems))
+                    console.log(Markdown(response.output_text))
 
                 # Assume we are done
                 working = False
@@ -57,17 +68,20 @@ class Agent:
                 if self._max_iters is not None and iters >= self._max_iters:
                     break
 
+                # Append to the conversation history
                 input_list += response.output
 
+                # Look for function tool calls to execute
                 for item in response.output:
                     if item.type == "function_call":
                         if item.name in self._tools:
+                            # Collect the arguments
                             args = json.loads(item.arguments)
-                            elems.append(
-                                f"  [dim blue]{item.name}({','.join(k + '=' + v for k, v in args.items())})[/]"
+                            console.log(
+                                f"  [dim blue]{item.name}({','.join(k + '=' + json.dumps(v) for k, v in args.items())})[/]"
                             )
-                            live.update(Group(*elems))
                             try:
+                                # Call the tool
                                 result = await self._tools[item.name].execute(**args)
                                 input_list.append(
                                     {
@@ -77,7 +91,7 @@ class Agent:
                                     }
                                 )
                             except Exception as e:
-                                elems.append(f"[bold red]{e}[/]")
+                                console.log(f"[bold red]{e}[/]")
                                 input_list.append(
                                     {
                                         "type": "function_call_output",
@@ -86,7 +100,7 @@ class Agent:
                                     }
                                 )
                         else:
-                            elems.append(f"[bold red]No tool named '{item.name}'[/]")
+                            console.log(f"[bold red]No tool named '{item.name}'[/]")
                             input_list.append(
                                 {
                                     "type": "function_call_output",
@@ -94,7 +108,8 @@ class Agent:
                                     "output": f"Error: no tool named '{item.name}'",
                                 }
                             )
-                        live.update(Group(*elems))
+
+                        # If a tool call was at least attempted, we are still working
                         working = True
 
 
@@ -131,14 +146,18 @@ def main():
         type=str,
         action="append",
         help="mark a relative path as read-only",
-        dest="read_only_path"
+        dest="read_only_path",
     )
-    parser.add_argument(
+    allow_group = parser.add_mutually_exclusive_group(required=False)
+    allow_group.add_argument(
         "--allow",
         type=str,
         action="append",
         choices=list(user_tools.keys()),
         help="allow use of a user-defined tool",
+    )
+    allow_group.add_argument(
+        "--allow-all", "-A", action="store_true", help="allow all user tools"
     )
 
     ins_group = parser.add_mutually_exclusive_group(required=False)
@@ -161,7 +180,12 @@ def main():
 
     args = parser.parse_args()
 
-    user_tools = {k: v for k, v in user_tools.items() if k in args.allow} if args.allow else {}
+    if not args.allow_all:
+        user_tools = (
+            {k: v for k, v in user_tools.items() if k in args.allow}
+            if args.allow
+            else {}
+        )
     system_tools = {
         x.schema()["name"]: x for x in (ListFiles(), SearchFiles(), ReadFile())
     }
