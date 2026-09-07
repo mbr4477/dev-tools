@@ -125,6 +125,7 @@ def main():
         SearchFiles,
         ReadFile,
         WriteFile,
+        MakeDirs,
         UserTool,
         ToolDef,
     )
@@ -191,8 +192,8 @@ def main():
     }
 
     if args.write:
-        write_file = WriteFile(args.read_only_path)
-        system_tools[write_file.schema()["name"]] = write_file
+        write_tools = [WriteFile(args.read_only_path), MakeDirs(args.read_only_path)]
+        system_tools.update({x.schema()["name"]: x for x in write_tools})
 
     tools = {**system_tools, **user_tools}
 
