@@ -77,9 +77,14 @@ class UserTool(Tool):
         # Safely substitute into args
         if self._tool_def.args is not None:
             if self._tool_def.shell:
-                cmd += [shlex.quote(x.format(**kwargs, cwd=os.getcwd())) for x in self._tool_def.args]
+                cmd += [
+                    shlex.quote(x.format(**kwargs, cwd=os.getcwd()))
+                    for x in self._tool_def.args
+                ]
             else:
-                cmd += [x.format(**kwargs, cwd=os.getcwd()) for x in self._tool_def.args]
+                cmd += [
+                    x.format(**kwargs, cwd=os.getcwd()) for x in self._tool_def.args
+                ]
 
         if self._tool_def.shell:
             proc = await asyncio.create_subprocess_shell(
@@ -221,11 +226,15 @@ class ReadFile(Tool):
 
 
 class WriteFile(Tool):
+    def __init__(self, read_only_prefixes: list[str] | None = None):
+        super().__init__()
+        self._ro_prefixes = read_only_prefixes or []
+
     def schema(self) -> dict[str, Any]:
         return {
             "type": "function",
             "name": "write_file",
-            "description": "Create or replace file in the current working directory",
+            "description": f"Create or replace file in the current working directory. Disallowed paths: {','.join(self._ro_prefixes)}",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -248,6 +257,10 @@ class WriteFile(Tool):
             return (
                 f"Error: {relative_path} resolves outside the current working directory"
             )
+
+        for prefix in self._ro_prefixes:
+            if relative_path.startswith(prefix):
+                return f"Error: {relative_path} is disallowed because {prefix} is read-only"
 
         with open(path, "w") as file:
             file.write(text)

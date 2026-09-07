@@ -35,9 +35,10 @@ class Agent:
         working = True
         iters = 0
         console = Console()
-        while working:
-            with Live("", console=console, vertical_overflow="visible") as live:
-                live.update(Spinner("dots", text="[yellow]Working...[/yellow]"))
+        elems = []
+        with Live("", console=console, vertical_overflow="visible") as live:
+            while working:
+                live.update(Group(*elems, Spinner("dots", text="[yellow]Working...[/yellow]")))
                 response = await client.responses.create(
                     model=self._model,
                     tools=tools,
@@ -45,54 +46,56 @@ class Agent:
                     input=input_list,
                 )
                 if response.output_text:
-                    live.update(Markdown(response.output_text))
-                else:
-                    live.update("")
+                    elems.append(Markdown(response.output_text))
+                live.update(Group(*elems))
 
-            # Assume we are done
-            working = False
+                # Assume we are done
+                working = False
 
-            # Check for max iters
-            iters += 1
-            if self._max_iters is not None and iters >= self._max_iters:
-                break
+                # Check for max iters
+                iters += 1
+                if self._max_iters is not None and iters >= self._max_iters:
+                    break
 
-            input_list += response.output
+                input_list += response.output
 
-            for item in response.output:
-                if item.type == "function_call":
-                    if item.name in self._tools:
-                        args = json.loads(item.arguments)
-                        print(
-                            f"    {item.name}({','.join(k + '=' + v for k, v in args.items())})"
-                        )
-                        try:
-                            result = await self._tools[item.name].execute(**args)
+                for item in response.output:
+                    if item.type == "function_call":
+                        if item.name in self._tools:
+                            args = json.loads(item.arguments)
+                            elems.append(
+                                f"  [dim blue]{item.name}({','.join(k + '=' + v for k, v in args.items())})[/]"
+                            )
+                            live.update(Group(*elems))
+                            try:
+                                result = await self._tools[item.name].execute(**args)
+                                input_list.append(
+                                    {
+                                        "type": "function_call_output",
+                                        "call_id": item.call_id,
+                                        "output": result,
+                                    }
+                                )
+                            except Exception as e:
+                                elems.append(f"[bold red]{e}[/]")
+                                input_list.append(
+                                    {
+                                        "type": "function_call_output",
+                                        "call_id": item.call_id,
+                                        "output": str(e),
+                                    }
+                                )
+                        else:
+                            elems.append(f"[bold red]No tool named '{item.name}'[/]")
                             input_list.append(
                                 {
                                     "type": "function_call_output",
                                     "call_id": item.call_id,
-                                    "output": result,
+                                    "output": f"Error: no tool named '{item.name}'",
                                 }
                             )
-                        except Exception as e:
-                            print("   ", e)
-                            input_list.append(
-                                {
-                                    "type": "function_call_output",
-                                    "call_id": item.call_id,
-                                    "output": str(e),
-                                }
-                            )
-                    else:
-                        input_list.append(
-                            {
-                                "type": "function_call_output",
-                                "call_id": item.call_id,
-                                "output": f"Error: no tool named {item.name}",
-                            }
-                        )
-                    working = True
+                        live.update(Group(*elems))
+                        working = True
 
 
 async def async_main(model: str, tools: list[Tool], instructions: str, prompt: str):
@@ -116,19 +119,26 @@ def main():
             content = json.loads(tool_file.read())
 
         tool_defs = [ToolDef.from_dict(x) for x in content]
-        user_tools = [UserTool(x) for x in tool_defs]
-
-    tools = {
-        x.schema()["name"]: x
-        for x in [ListFiles(), SearchFiles(), ReadFile(), WriteFile()] + user_tools
-    }
-    tool_names = list(tools.keys())
+        user_tools = {x.schema.name: UserTool(x) for x in tool_defs}
+    else:
+        user_tools = {}
 
     parser = argparse.ArgumentParser()
+    parser.add_argument("--write", action="store_true", help="enable write mode")
+    parser.add_argument(
+        "--ro",
+        "-R",
+        type=str,
+        action="append",
+        help="mark a relative path as read-only",
+        dest="read_only_path"
+    )
     parser.add_argument(
         "--allow",
         type=str,
-        help=f"comma separate list of allowed tools: {','.join(tool_names)}",
+        action="append",
+        choices=list(user_tools.keys()),
+        help="allow use of a user-defined tool",
     )
 
     ins_group = parser.add_mutually_exclusive_group(required=False)
@@ -151,11 +161,16 @@ def main():
 
     args = parser.parse_args()
 
-    allowed_tool_names = args.allow.split(",") if args.allow else []
-    for tool_name in allowed_tool_names:
-        if tool_name not in tools:
-            print(f"Error: unknown tool '{tool_name}'")
-            sys.exit(1)
+    user_tools = {k: v for k, v in user_tools.items() if k in args.allow} if args.allow else {}
+    system_tools = {
+        x.schema()["name"]: x for x in (ListFiles(), SearchFiles(), ReadFile())
+    }
+
+    if args.write:
+        write_file = WriteFile(args.read_only_path)
+        system_tools[write_file.schema()["name"]] = write_file
+
+    tools = {**system_tools, **user_tools}
 
     instructions = None
     if args.instructions_file:
@@ -170,8 +185,4 @@ def main():
     else:
         prompt = sys.stdin.read()
 
-    asyncio.run(
-        async_main(
-            args.model, [tools[x] for x in allowed_tool_names], instructions, prompt
-        )
-    )
+    asyncio.run(async_main(args.model, list(tools.values()), instructions, prompt))
