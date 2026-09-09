@@ -113,7 +113,7 @@ class Agent:
                         working = True
 
 
-async def async_main(model: str, tools: list[Tool], instructions: str, prompt: str):
+async def async_main(model: str, tools: list[Tool], instructions: str | None, prompt: str):
     await Agent(model, tools, instructions).run(prompt)
 
 
@@ -124,6 +124,7 @@ def main():
         ListFiles,
         SearchFiles,
         ReadFile,
+        ReadWritePolicy,
         WriteFile,
         MakeDirs,
         RemovePath,
@@ -141,14 +142,20 @@ def main():
         user_tools = {}
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--write", action="store_true", help="enable write mode")
+    write_group = parser.add_mutually_exclusive_group(required=False)
+    write_group.add_argument("--write", action="store_true", help="enable write mode")
+    write_group.add_argument(
+        "--allow-write",
+        action="append",
+        type=str,
+        help="whitelist a path as writable in the default read-only mode",
+    )
     parser.add_argument(
-        "--ro",
-        "-R",
+        "--read-only",
         type=str,
         action="append",
         help="mark a relative path as read-only",
-        dest="read_only_path",
+        dest="read_only",
     )
     allow_group = parser.add_mutually_exclusive_group(required=False)
     allow_group.add_argument(
@@ -182,6 +189,10 @@ def main():
 
     args = parser.parse_args()
 
+    # Create policy
+    policy = ReadWritePolicy(args.write, args.allow_write, args.read_only)
+
+    # Configure allowed tools
     if not args.allow_all:
         user_tools = (
             {k: v for k, v in user_tools.items() if k in args.allow}
@@ -189,14 +200,14 @@ def main():
             else {}
         )
     system_tools = {
-        x.schema()["name"]: x for x in (ListFiles(), SearchFiles(), ReadFile())
+        x.schema()["name"]: x for x in (ListFiles(), SearchFiles(), ReadFile(policy))
     }
 
-    if args.write:
+    if policy.has_writable_paths():
         write_tools = [
-            WriteFile(args.read_only_path),
-            MakeDirs(args.read_only_path),
-            RemovePath(args.read_only_path),
+            WriteFile(policy),
+            MakeDirs(policy),
+            RemovePath(policy),
         ]
         system_tools.update({x.schema()["name"]: x for x in write_tools})
 
@@ -207,7 +218,7 @@ def main():
         with open(args.instructions_file, "r") as ins_file:
             instructions = ins_file.read()
     elif args.instructions:
-        instructions = args.instructions
+        instructions = str(args.instructions)
 
     prompt = None
     if args.prompt:

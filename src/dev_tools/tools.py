@@ -8,6 +8,55 @@ from typing import Any, Self
 import jsonschema
 
 
+class InvalidReadWritePolicy(Exception):
+    def __init__(self, msg: str):
+        super().__init__(msg)
+
+
+class ReadWritePolicy:
+    def __init__(
+        self,
+        write_mode: bool,
+        allow_write: list[str] | None = None,
+        read_only: list[str] | None = None,
+    ):
+        self._write_mode = write_mode
+        self._allow_write = allow_write
+        self._read_only = read_only
+
+        if write_mode and allow_write:
+            raise InvalidReadWritePolicy(
+                "allow_write list disallowed when write_mode=True"
+            )
+
+    def _is_whitelisted(self, rel_path: str) -> bool:
+        return self._allow_write is not None and any(
+            rel_path.startswith(x) for x in self._allow_write
+        )
+
+    def _is_blacklisted(self, rel_path: str) -> bool:
+        return self._read_only is not None and any(
+            rel_path.startswith(x) for x in self._read_only
+        )
+
+    def is_readable(self, rel_path: str) -> bool:
+        # Disallow everything outside the working directory
+        path = os.path.abspath(rel_path)
+        return path.startswith(os.getcwd())
+
+    def is_writable(self, rel_path: str) -> bool:
+        # To be writable, we at a minimum need to be readable
+        if not self.is_readable(rel_path):
+            return False
+
+        return (self._write_mode and not self._is_blacklisted(rel_path)) or (
+            not self._write_mode and self._is_whitelisted(rel_path)
+        )
+
+    def has_writable_paths(self) -> bool:
+        return self._write_mode or self._allow_write is not None
+
+
 @dataclasses.dataclass
 class ToolSchema:
     type_: str
@@ -195,6 +244,10 @@ class SearchFiles(Tool):
 
 
 class ReadFile(Tool):
+    def __init__(self, policy: ReadWritePolicy):
+        super().__init__()
+        self._policy = policy
+
     def schema(self) -> dict[str, Any]:
         return {
             "type": "function",
@@ -213,12 +266,10 @@ class ReadFile(Tool):
         }
 
     async def execute(self, relative_path: str) -> str:
-        path = os.path.abspath(relative_path)
-        if not path.startswith(os.getcwd()):
-            return (
-                f"Error: {relative_path} resolves outside the current working directory"
-            )
+        if not self._policy.is_readable(relative_path):
+            return f"Error: {relative_path} is not readable under the ReadWritePolicy"
 
+        path = os.path.abspath(relative_path)
         with open(path, "r") as file:
             content = file.read()
 
@@ -226,15 +277,15 @@ class ReadFile(Tool):
 
 
 class WriteFile(Tool):
-    def __init__(self, read_only_prefixes: list[str] | None = None):
+    def __init__(self, write_policy: ReadWritePolicy):
         super().__init__()
-        self._ro_prefixes = read_only_prefixes or []
+        self._policy = write_policy
 
     def schema(self) -> dict[str, Any]:
         return {
             "type": "function",
             "name": "write_file",
-            "description": f"Create or replace file in the current working directory. Disallowed paths: {','.join(self._ro_prefixes)}",
+            "description": "Create or replace file in the current working directory.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -252,32 +303,26 @@ class WriteFile(Tool):
         }
 
     async def execute(self, relative_path: str, text: str) -> str:
+        if not self._policy.is_writable(relative_path):
+            return f"Error: {relative_path} is not writable under the ReadWritePolicy"
+
         path = os.path.abspath(relative_path)
-        if not path.startswith(os.getcwd()):
-            return (
-                f"Error: {relative_path} resolves outside the current working directory"
-            )
-
-        for prefix in self._ro_prefixes:
-            if relative_path.startswith(prefix):
-                return f"Error: {relative_path} is disallowed because {prefix} is read-only"
-
         with open(path, "w") as file:
             file.write(text)
 
-        return "Success"
+        return "ok"
 
 
 class MakeDirs(Tool):
-    def __init__(self, read_only_prefixes: list[str] | None = None):
+    def __init__(self, write_policy: ReadWritePolicy):
         super().__init__()
-        self._ro_prefixes = read_only_prefixes or []
+        self._policy = write_policy
 
     def schema(self) -> dict[str, Any]:
         return {
             "type": "function",
             "name": "make_dirs",
-            "description": f"Create a directory, including intermediate directories. Disallowed paths: {','.join(self._ro_prefixes)}",
+            "description": "Create a directory, including intermediate directories.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -291,30 +336,25 @@ class MakeDirs(Tool):
         }
 
     async def execute(self, relative_path: str) -> str:
+        if not self._policy.is_writable(relative_path):
+            return f"Error: {relative_path} is not writable under the ReadWritePolicy"
+
         path = os.path.abspath(relative_path)
-        if not path.startswith(os.getcwd()):
-            return (
-                f"Error: {relative_path} resolves outside the current working directory"
-            )
-
-        for prefix in self._ro_prefixes:
-            if relative_path.startswith(prefix):
-                return f"Error: {relative_path} is disallowed because {prefix} is read-only"
-
         os.makedirs(path, exist_ok=True)
 
-        return "Success"
+        return "ok"
+
 
 class RemovePath(Tool):
-    def __init__(self, read_only_prefixes: list[str] | None = None):
+    def __init__(self, write_policy: ReadWritePolicy):
         super().__init__()
-        self._ro_prefixes = read_only_prefixes or []
+        self._policy = write_policy
 
     def schema(self) -> dict[str, Any]:
         return {
             "type": "function",
             "name": "remove_path",
-            "description": f"Remove a file or directory. Disallowed paths: {','.join(self._ro_prefixes)}",
+            "description": "Remove a file or directory.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -328,19 +368,13 @@ class RemovePath(Tool):
         }
 
     async def execute(self, relative_path: str) -> str:
+        if not self._policy.is_writable(relative_path):
+            return f"Error: {relative_path} is not writable under the ReadWritePolicy"
+
         path = os.path.abspath(relative_path)
-        if not path.startswith(os.getcwd()):
-            return (
-                f"Error: {relative_path} resolves outside the current working directory"
-            )
-
-        for prefix in self._ro_prefixes:
-            if relative_path.startswith(prefix):
-                return f"Error: {relative_path} is disallowed because {prefix} is read-only"
-
         if os.path.isdir(path):
             shutil.rmtree(path)
         else:
             os.remove(relative_path)
 
-        return "Success"
+        return "ok"
