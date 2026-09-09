@@ -1,13 +1,11 @@
 import asyncio
 import json
-import sys
 import os
+import sys
 
 from openai import AsyncOpenAI
-from rich.console import Console, Group
-from rich.live import Live
+from rich.console import Console
 from rich.markdown import Markdown
-from rich.spinner import Spinner
 
 from dev_tools.tools import Tool
 
@@ -78,7 +76,7 @@ class Agent:
                             # Collect the arguments
                             args = json.loads(item.arguments)
                             console.log(
-                                f"  [dim blue]{item.name}({','.join(k + '=' + json.dumps(v) for k, v in args.items())})[/]"
+                                f"  [dim white]{item.name}({','.join(k + '=' + json.dumps(v) for k, v in args.items())})[/]"
                             )
                             try:
                                 # Call the tool
@@ -122,14 +120,14 @@ def main():
 
     from dev_tools.tools import (
         ListFiles,
-        SearchFiles,
+        MakeDirs,
         ReadFile,
         ReadWritePolicy,
-        WriteFile,
-        MakeDirs,
         RemovePath,
-        UserTool,
+        SearchFiles,
         ToolDef,
+        UserTool,
+        WriteFile,
     )
 
     if os.path.exists(".agent-tools.json"):
