@@ -3,10 +3,12 @@ import json
 import os
 import sys
 
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, Omit
+from openai.types.responses import ResponseTextConfigParam
 from rich.console import Console
 from rich.markdown import Markdown
 
+from dev_tools.file_async import read_file_async
 from dev_tools.tools import Tool
 
 
@@ -18,6 +20,7 @@ class Agent:
         model: str,
         tools: list[Tool],
         instructions: str | None = None,
+        json_schema: dict[str, object] | None = None,
         max_iters: int | None = None,
     ):
         """
@@ -25,11 +28,13 @@ class Agent:
             model: The model identifier.
             tools: A list of permitted tools.
             instructions: The system prompt.
+            json_schema: A json schema for the final output.
             max_iters: The max number of agent API calls.
         """
         self._model = model
         self._tools = {x.schema()["name"]: x for x in tools}
         self._instructions = instructions
+        self._json_schema = json_schema
         self._max_iters = max_iters
 
     async def run(self, prompt: str):
@@ -43,10 +48,24 @@ class Agent:
         tools = [x.schema() for x in self._tools.values()]
         input_list = [{"role": "user", "content": prompt}]
 
+        text = Omit()
+        if self._json_schema is not None:
+            text = ResponseTextConfigParam(
+                {
+                    "format": {
+                        "type": "json_schema",
+                        "name": self._json_schema.get("name", "output"),
+                        "strict": True,
+                        "schema": self._json_schema,
+                    }
+                }
+            )
+
         # Run the agentic loop
         working = True
         iters = 0
-        console = Console()
+        is_piped = not sys.stdout.isatty()
+        console = Console(stderr=True, force_terminal=not is_piped)
         with console.status("[bold yellow]Working...[/]"):
             while working:
                 response = await client.responses.create(
@@ -54,9 +73,17 @@ class Agent:
                     tools=tools,
                     instructions=self._instructions,
                     input=input_list,
+                    text=text,
                 )
                 if response.output_text:
-                    console.log(Markdown(response.output_text))
+                    if self._json_schema is not None:
+                        try:
+                            console.log(json.loads(response.output_text))
+                        except json.JSONDecodeError as e:
+                            console.log(f"[bold red]{e}[/]")
+                        print(response.output_text, flush=True)
+                    else:
+                        console.log(Markdown(response.output_text))
 
                 # Assume we are done
                 working = False
@@ -111,11 +138,7 @@ class Agent:
                         working = True
 
 
-async def async_main(model: str, tools: list[Tool], instructions: str | None, prompt: str):
-    await Agent(model, tools, instructions).run(prompt)
-
-
-def main():
+async def async_main():
     import argparse
 
     from dev_tools.tools import (
@@ -131,9 +154,7 @@ def main():
     )
 
     if os.path.exists(".agent-tools.json"):
-        with open(".agent-tools.json", "r") as tool_file:
-            content = json.loads(tool_file.read())
-
+        content = json.loads(await read_file_async(".agent-tools.json"))
         tool_defs = [ToolDef.from_dict(x) for x in content]
         user_tools = {x.schema.name: UserTool(x) for x in tool_defs}
     else:
@@ -185,6 +206,12 @@ def main():
         "--model", "-m", type=str, help="model identifier", required=True
     )
 
+    parser.add_argument(
+        "--json-schema",
+        type=str,
+        help="json schema for model output. Objects must have `additionalProperties: false` and all properties listed in `required`.",
+    )
+
     args = parser.parse_args()
 
     # Create policy
@@ -213,15 +240,24 @@ def main():
 
     instructions = None
     if args.instructions_file:
-        with open(args.instructions_file, "r") as ins_file:
-            instructions = ins_file.read()
+        instructions = await read_file_async(args.instructions_file)
     elif args.instructions:
         instructions = str(args.instructions)
 
     prompt = None
     if args.prompt:
         prompt = args.prompt
+    elif args.prompt_file:
+        prompt = await read_file_async(args.prompt_file)
     else:
         prompt = sys.stdin.read()
+    await Agent(
+        args.model,
+        list(tools.values()),
+        instructions,
+        json.loads(args.json_schema) if args.json_schema else None,
+    ).run(prompt)
 
-    asyncio.run(async_main(args.model, list(tools.values()), instructions, prompt))
+
+def main():
+    asyncio.run(async_main())
