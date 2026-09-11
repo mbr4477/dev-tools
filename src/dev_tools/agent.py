@@ -244,13 +244,20 @@ async def async_main():
     elif args.instructions:
         instructions = str(args.instructions)
 
-    prompt = None
+    prompt = ""
     if args.prompt:
         prompt = args.prompt
     elif args.prompt_file:
         prompt = await read_file_async(args.prompt_file)
-    else:
-        prompt = sys.stdin.read()
+
+    # If text is piped in, append it to the prompt
+    if not sys.stdin.isatty():
+        prompt += f"\n\n{sys.stdin.read()}"
+
+    prompt = prompt.strip()
+
+    assert prompt, "No prompt provided"
+
     await Agent(
         args.model,
         list(tools.values()),
