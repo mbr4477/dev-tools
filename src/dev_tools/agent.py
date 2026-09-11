@@ -115,7 +115,7 @@ class Agent:
                                         "output": result,
                                     }
                                 )
-                            except Exception as e:
+                            except Exception as e:  # noqa: BLE001
                                 console.log(f"[bold red]{e}[/]")
                                 input_list.append(
                                     {

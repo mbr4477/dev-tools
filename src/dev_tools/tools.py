@@ -1,11 +1,15 @@
+from __future__ import annotations
+
 import asyncio
 import dataclasses
 import os
 import shlex
 import shutil
-from typing import Any, Self
+from typing import Any
 
 import jsonschema
+
+from dev_tools.file_async import read_file_async, write_file_async
 
 
 class InvalidReadWritePolicy(Exception):
@@ -65,7 +69,7 @@ class ToolSchema:
     parameters: Any
 
     @staticmethod
-    def from_dict(data: dict[str, Any]) -> Self:
+    def from_dict(data: dict[str, Any]) -> ToolSchema:
         return ToolSchema(
             data["type"], data["name"], data["description"], data["parameters"]
         )
@@ -87,7 +91,7 @@ class ToolDef:
     shell: bool = False
 
     @staticmethod
-    def from_dict(data: dict[str, Any]) -> Self:
+    def from_dict(data: dict[str, Any]) -> ToolDef:
         return ToolDef(
             ToolSchema.from_dict(data["schema"]),
             data["program"],
@@ -97,7 +101,7 @@ class ToolDef:
 
 
 class Tool:
-    def schema(self) -> dict[str, Any]:
+    def schema(self) -> dict[str, object]:
         raise NotImplementedError()
 
     async def execute(self, **kwargs) -> str:
@@ -116,10 +120,10 @@ class UserTool(Tool):
         # Validate parameters
         try:
             jsonschema.validate(instance=kwargs, schema=self.schema()["parameters"])
-        except jsonschema.exceptions.ValidationError as err:
+        except jsonschema.ValidationError as err:
             return f"Error: {err.message}"
-        except jsonschema.exceptions.SchemaError as err:
-            return "Error: tool parameter schema is malformed"
+        except jsonschema.SchemaError as err:
+            return f"Error: {err.message}"
 
         cmd = [self._tool_def.program]
 
@@ -167,7 +171,7 @@ class ListFiles(Tool):
                 "properties": {
                     "filter_regex": {
                         "type": "string",
-                        "description": "Optional regex filter for relative paths. Must match entire relative path.",
+                        "description": "Optional regex filter for relative paths. Must match the full relative path.",
                     }
                 },
             },
@@ -270,10 +274,7 @@ class ReadFile(Tool):
             return f"Error: {relative_path} is not readable under the ReadWritePolicy"
 
         path = os.path.abspath(relative_path)
-        with open(path, "r") as file:
-            content = file.read()
-
-        return content
+        return await read_file_async(path)
 
 
 class WriteFile(Tool):
@@ -307,9 +308,7 @@ class WriteFile(Tool):
             return f"Error: {relative_path} is not writable under the ReadWritePolicy"
 
         path = os.path.abspath(relative_path)
-        with open(path, "w") as file:
-            file.write(text)
-
+        await write_file_async(path, text)
         return "ok"
 
 
