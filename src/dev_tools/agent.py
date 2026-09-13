@@ -7,6 +7,7 @@ from rich.console import Console
 from rich.markdown import Markdown
 
 from dev_tools.backends import AgentBackend
+from dev_tools.backends.anthropic import AnthropicBackend
 from dev_tools.backends.openai import OpenAIBackend
 from dev_tools.file_async import read_file_async
 from dev_tools.tools import Tool
@@ -64,7 +65,7 @@ class Agent:
                         session, [x.schema() for x in tool_dict.values()], json_schema
                     )
                 except Exception:
-                    console.log(response.session)
+                    console.log(session)
                     raise
 
                 session = response.session
@@ -131,6 +132,8 @@ async def async_main():
     else:
         user_tools = {}
 
+    backends = {"openai": OpenAIBackend(), "anthropic": AnthropicBackend()}
+
     parser = argparse.ArgumentParser()
     write_group = parser.add_mutually_exclusive_group(required=False)
     write_group.add_argument("--write", action="store_true", help="enable write mode")
@@ -174,7 +177,11 @@ async def async_main():
     )
 
     parser.add_argument(
-        "--model", "-m", type=str, help="model identifier", required=True
+        "--model",
+        "-m",
+        type=str,
+        help=f"model identifier: 'backend/model'. Available backends: {','.join(backends.keys())}",
+        required=True,
     )
 
     parser.add_argument(
@@ -225,15 +232,15 @@ async def async_main():
     if not sys.stdin.isatty():
         prompt += f"\n\n{sys.stdin.read()}"
 
+    assert prompt, "No prompt provided"
     prompt = prompt.strip()
 
-    assert prompt, "No prompt provided"
-
-    backend = OpenAIBackend()
+    backend_name, model = args.model.split("/", 1)
+    backend = backends[backend_name]
 
     await Agent(
         backend,
-        args.model,
+        model,
         instructions,
     ).run(
         prompt,
