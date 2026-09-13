@@ -3,11 +3,11 @@ import json
 import os
 import sys
 
-from openai import AsyncOpenAI, Omit
-from openai.types.responses import ResponseTextConfigParam
 from rich.console import Console
 from rich.markdown import Markdown
 
+from dev_tools.backends import AgentBackend
+from dev_tools.backends.openai import OpenAIBackend
 from dev_tools.file_async import read_file_async
 from dev_tools.tools import Tool
 
@@ -17,49 +17,32 @@ class Agent:
 
     def __init__(
         self,
-        model: str,
-        tools: list[Tool],
+        backend: AgentBackend,
         instructions: str | None = None,
-        json_schema: dict[str, object] | None = None,
+        tools: list[Tool] | None = None,
         max_iters: int | None = None,
     ):
         """
         Args:
-            model: The model identifier.
-            tools: A list of permitted tools.
+            backend: The agent backend.
             instructions: The system prompt.
-            json_schema: A json schema for the final output.
+            tools: The tools the agent can call.
             max_iters: The max number of agent API calls.
         """
-        self._model = model
-        self._tools = {x.schema()["name"]: x for x in tools}
+        self._backend = backend
         self._instructions = instructions
-        self._json_schema = json_schema
+        self._tool_dict = {x.schema()["name"]: x for x in tools} if tools else {}
         self._max_iters = max_iters
 
-    async def run(self, prompt: str):
+    async def run(self, prompt: str, json_schema: dict[str, object] | None = None):
         """Run the agent.
 
         Args:
             prompt: The initial prompt.
+            json_schema: An optional schema for structured output
         """
-        # Create the client, tool schemas, and initial input list
-        client = AsyncOpenAI()
-        tools = [x.schema() for x in self._tools.values()]
-        input_list = [{"role": "user", "content": prompt}]
-
-        text = Omit()
-        if self._json_schema is not None:
-            text = ResponseTextConfigParam(
-                {
-                    "format": {
-                        "type": "json_schema",
-                        "name": self._json_schema.get("name", "output"),
-                        "strict": True,
-                        "schema": self._json_schema,
-                    }
-                }
-            )
+        session = self._backend.create_session(self._instructions)
+        session.add_user_content(prompt)
 
         # Run the agentic loop
         working = True
@@ -68,22 +51,19 @@ class Agent:
         console = Console(stderr=True, force_terminal=not is_piped)
         with console.status("[bold yellow]Working...[/]"):
             while working:
-                response = await client.responses.create(
-                    model=self._model,
-                    tools=tools,
-                    instructions=self._instructions,
-                    input=input_list,
-                    text=text,
-                )
-                if response.output_text:
-                    if self._json_schema is not None:
-                        try:
-                            console.log(json.loads(response.output_text))
-                        except json.JSONDecodeError as e:
-                            console.log(f"[bold red]{e}[/]")
-                        print(response.output_text, flush=True)
-                    else:
-                        console.log(Markdown(response.output_text))
+                try:
+                    response = await self._backend.create_response(session, json_schema)
+                except Exception:
+                    console.log(response.session)
+                    raise
+
+                session = response.session
+                if response.output:
+                    console.log(Markdown(response.output))
+
+                if response.structured_output:
+                    console.log(response.structured_output)
+                    print(json.dumps(response.structured_output, indent=2), flush=True)
 
                 # Assume we are done
                 working = False
@@ -93,49 +73,30 @@ class Agent:
                 if self._max_iters is not None and iters >= self._max_iters:
                     break
 
-                # Append to the conversation history
-                input_list += response.output
-
                 # Look for function tool calls to execute
-                for item in response.output:
-                    if item.type == "function_call":
-                        if item.name in self._tools:
-                            # Collect the arguments
-                            args = json.loads(item.arguments)
-                            console.log(
-                                f"  [dim white]{item.name}({','.join(k + '=' + json.dumps(v) for k, v in args.items())})[/]"
+                for tool_call in response.tool_calls:
+                    if tool_call.name in self._tool_dict:
+                        # Collect the arguments
+                        console.log(
+                            f"  [dim white]{tool_call.name}({json.dumps(tool_call.args)})[/]"
+                        )
+                        try:
+                            # Call the tool
+                            result = await self._tool_dict[tool_call.name].execute(
+                                **tool_call.args
                             )
-                            try:
-                                # Call the tool
-                                result = await self._tools[item.name].execute(**args)
-                                input_list.append(
-                                    {
-                                        "type": "function_call_output",
-                                        "call_id": item.call_id,
-                                        "output": result,
-                                    }
-                                )
-                            except Exception as e:  # noqa: BLE001
-                                console.log(f"[bold red]{e}[/]")
-                                input_list.append(
-                                    {
-                                        "type": "function_call_output",
-                                        "call_id": item.call_id,
-                                        "output": str(e),
-                                    }
-                                )
-                        else:
-                            console.log(f"[bold red]No tool named '{item.name}'[/]")
-                            input_list.append(
-                                {
-                                    "type": "function_call_output",
-                                    "call_id": item.call_id,
-                                    "output": f"Error: no tool named '{item.name}'",
-                                }
-                            )
+                            session.add_tool_output(tool_call.call_id, result)
+                        except Exception as e:  # noqa: BLE001
+                            console.log(f"[bold red]{e}[/]")
+                            session.add_tool_output(tool_call.call_id, str(e))
+                    else:
+                        console.log(f"[bold red]No tool named '{tool_call.name}'[/]")
+                        session.add_tool_output(
+                            tool_call.call_id, f"No tool named '{tool_call.name}'"
+                        )
 
-                        # If a tool call was at least attempted, we are still working
-                        working = True
+                    # If a tool call was at least attempted, we are still working
+                    working = True
 
 
 async def async_main():
@@ -258,12 +219,13 @@ async def async_main():
 
     assert prompt, "No prompt provided"
 
+    backend = OpenAIBackend(args.model, list(tools.values()))
+
     await Agent(
-        args.model,
-        list(tools.values()),
+        backend,
         instructions,
-        json.loads(args.json_schema) if args.json_schema else None,
-    ).run(prompt)
+        list(tools.values()),
+    ).run(prompt, json.loads(args.json_schema) if args.json_schema else None)
 
 
 def main():
