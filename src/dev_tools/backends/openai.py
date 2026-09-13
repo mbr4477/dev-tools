@@ -10,12 +10,13 @@ from dev_tools.backends._backend import (
     Session,
     ToolCall,
 )
-from dev_tools.tools import Tool
+from dev_tools.tools import ToolSchema
 
 
 class OpenAISession(Session):
-    def __init__(self, instructions: str | None = None):
+    def __init__(self, model: str, instructions: str | None = None):
         super().__init__()
+        self._model = model
         self._input_list = []
         self._instructions = instructions
 
@@ -40,6 +41,9 @@ class OpenAISession(Session):
     def instructions(self) -> str | None:
         return self._instructions
 
+    def model(self) -> str:
+        return self._model
+
     def __repr__(self) -> str:
         return json.dumps(
             {"instructions": self._instructions, "input_list": self._input_list}
@@ -49,24 +53,37 @@ class OpenAISession(Session):
 class OpenAIBackend(AgentBackend):
     def __init__(
         self,
-        model: str,
-        tools: list[Tool],
         api_key: str | None = None,
         base_url: str | None = None,
     ):
         super().__init__()
         self._client = AsyncOpenAI(api_key=api_key, base_url=base_url)
-        self._model = model
-        self._tools = tools
 
-    def create_session(self, instructions: str | None = None) -> Session:
-        return OpenAISession(instructions)
+    def create_session(self, model: str, instructions: str | None = None) -> Session:
+        return OpenAISession(model, instructions)
 
     async def create_response(
-        self, session: Session, json_schema: dict[str, object] | None = None
+        self,
+        session: Session,
+        tools: list[ToolSchema] | None = None,
+        json_schema: dict[str, object] | None = None,
     ) -> Response:
         if not isinstance(session, OpenAISession):
             raise InvalidSession()
+
+        openai_tools = (
+            [
+                {
+                    "type": "function",
+                    "name": x.name,
+                    "description": x.description,
+                    "parameters": x.param_schema,
+                }
+                for x in tools
+            ]
+            if tools
+            else None
+        )
 
         text = None
         if json_schema is not None:
@@ -80,8 +97,8 @@ class OpenAIBackend(AgentBackend):
             }
 
         response = await self._client.responses.create(
-            model=self._model,
-            tools=[x.schema() for x in self._tools],
+            model=session.model(),
+            tools=openai_tools,
             instructions=session.instructions(),
             input=session.input_list(),
             text=text,

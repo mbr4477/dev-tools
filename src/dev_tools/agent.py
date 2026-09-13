@@ -18,31 +18,39 @@ class Agent:
     def __init__(
         self,
         backend: AgentBackend,
+        model: str,
         instructions: str | None = None,
-        tools: list[Tool] | None = None,
         max_iters: int | None = None,
     ):
         """
         Args:
             backend: The agent backend.
+            model: The model to use
             instructions: The system prompt.
-            tools: The tools the agent can call.
             max_iters: The max number of agent API calls.
         """
         self._backend = backend
+        self._model = model
         self._instructions = instructions
-        self._tool_dict = {x.schema()["name"]: x for x in tools} if tools else {}
         self._max_iters = max_iters
 
-    async def run(self, prompt: str, json_schema: dict[str, object] | None = None):
+    async def run(
+        self,
+        prompt: str,
+        tools: list[Tool] | None = None,
+        json_schema: dict[str, object] | None = None,
+    ):
         """Run the agent.
 
         Args:
             prompt: The initial prompt.
+            tools: The tools the agent can call.
             json_schema: An optional schema for structured output
         """
-        session = self._backend.create_session(self._instructions)
+        session = self._backend.create_session(self._model, self._instructions)
         session.add_user_content(prompt)
+
+        tool_dict = {x.schema().name: x for x in tools} if tools else {}
 
         # Run the agentic loop
         working = True
@@ -52,7 +60,9 @@ class Agent:
         with console.status("[bold yellow]Working...[/]"):
             while working:
                 try:
-                    response = await self._backend.create_response(session, json_schema)
+                    response = await self._backend.create_response(
+                        session, [x.schema() for x in tool_dict.values()], json_schema
+                    )
                 except Exception:
                     console.log(response.session)
                     raise
@@ -75,14 +85,14 @@ class Agent:
 
                 # Look for function tool calls to execute
                 for tool_call in response.tool_calls:
-                    if tool_call.name in self._tool_dict:
+                    if tool_call.name in tool_dict:
                         # Collect the arguments
                         console.log(
                             f"  [dim white]{tool_call.name}({json.dumps(tool_call.args)})[/]"
                         )
                         try:
                             # Call the tool
-                            result = await self._tool_dict[tool_call.name].execute(
+                            result = await tool_dict[tool_call.name].execute(
                                 **tool_call.args
                             )
                             session.add_tool_output(tool_call.call_id, result)
@@ -109,14 +119,14 @@ async def async_main():
         ReadWritePolicy,
         RemovePath,
         SearchFiles,
-        ToolDef,
         UserTool,
+        UserToolDef,
         WriteFile,
     )
 
     if os.path.exists(".agent-tools.json"):
         content = json.loads(await read_file_async(".agent-tools.json"))
-        tool_defs = [ToolDef.from_dict(x) for x in content]
+        tool_defs = [UserToolDef.from_dict(x) for x in content]
         user_tools = {x.schema.name: UserTool(x) for x in tool_defs}
     else:
         user_tools = {}
@@ -186,7 +196,7 @@ async def async_main():
             else {}
         )
     system_tools = {
-        x.schema()["name"]: x for x in (ListFiles(), SearchFiles(), ReadFile(policy))
+        x.schema().name: x for x in (ListFiles(), SearchFiles(), ReadFile(policy))
     }
 
     if policy.has_writable_paths():
@@ -219,13 +229,17 @@ async def async_main():
 
     assert prompt, "No prompt provided"
 
-    backend = OpenAIBackend(args.model, list(tools.values()))
+    backend = OpenAIBackend()
 
     await Agent(
         backend,
+        args.model,
         instructions,
+    ).run(
+        prompt,
         list(tools.values()),
-    ).run(prompt, json.loads(args.json_schema) if args.json_schema else None)
+        json.loads(args.json_schema) if args.json_schema else None,
+    )
 
 
 def main():

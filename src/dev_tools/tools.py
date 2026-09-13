@@ -63,36 +63,33 @@ class ReadWritePolicy:
 
 @dataclasses.dataclass
 class ToolSchema:
-    type_: str
     name: str
     description: str
-    parameters: Any
+    param_schema: dict[str, object]
 
     @staticmethod
     def from_dict(data: dict[str, Any]) -> ToolSchema:
-        return ToolSchema(
-            data["type"], data["name"], data["description"], data["parameters"]
-        )
+        return ToolSchema(data["name"], data["description"], data["parameters"])
 
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "type": self.type_,
-            "name": self.name,
-            "description": self.description,
-            "parameters": self.parameters,
-        }
+
+class Tool:
+    def schema(self) -> ToolSchema:
+        raise NotImplementedError()
+
+    async def execute(self, **kwargs) -> str:
+        raise NotImplementedError()
 
 
 @dataclasses.dataclass
-class ToolDef:
+class UserToolDef:
     schema: ToolSchema
     program: str
     args: list[str] | None = None
     shell: bool = False
 
     @staticmethod
-    def from_dict(data: dict[str, Any]) -> ToolDef:
-        return ToolDef(
+    def from_dict(data: dict[str, Any]) -> UserToolDef:
+        return UserToolDef(
             ToolSchema.from_dict(data["schema"]),
             data["program"],
             data.get("args", None),
@@ -100,26 +97,20 @@ class ToolDef:
         )
 
 
-class Tool:
-    def schema(self) -> dict[str, object]:
-        raise NotImplementedError()
-
-    async def execute(self, **kwargs) -> str:
-        raise NotImplementedError()
-
-
 class UserTool(Tool):
-    def __init__(self, tool_def: ToolDef):
+    def __init__(self, tool_def: UserToolDef):
         super().__init__()
         self._tool_def = tool_def
 
-    def schema(self) -> dict[str, Any]:
-        return self._tool_def.schema.to_dict()
+    def schema(self) -> ToolSchema:
+        return self._tool_def.schema
 
     async def execute(self, **kwargs) -> str:
         # Validate parameters
         try:
-            jsonschema.validate(instance=kwargs, schema=self.schema()["parameters"])
+            jsonschema.validate(
+                instance=kwargs, schema=self._tool_def.schema.param_schema
+            )
         except jsonschema.ValidationError as err:
             return f"Error: {err.message}"
         except jsonschema.SchemaError as err:
@@ -161,12 +152,11 @@ class UserTool(Tool):
 
 
 class ListFiles(Tool):
-    def schema(self) -> dict[str, Any]:
-        return {
-            "type": "function",
-            "name": "list_files",
-            "description": "List relative paths for files in the current working directory",
-            "parameters": {
+    def schema(self) -> ToolSchema:
+        return ToolSchema(
+            "list_files",
+            "List relative paths for files in the current working directory",
+            {
                 "type": "object",
                 "properties": {
                     "filter_regex": {
@@ -175,7 +165,7 @@ class ListFiles(Tool):
                     }
                 },
             },
-        }
+        )
 
     async def execute(self, filter_regex: str | None = None) -> str:
         proc = await asyncio.create_subprocess_exec(
@@ -199,12 +189,11 @@ class ListFiles(Tool):
 
 
 class SearchFiles(Tool):
-    def schema(self) -> dict[str, Any]:
-        return {
-            "type": "function",
-            "name": "search_files",
-            "description": "Get the relative path for files matching the filter regex and containing the search regex",
-            "parameters": {
+    def schema(self) -> ToolSchema:
+        return ToolSchema(
+            "search_files",
+            "Get the relative path for files matching the filter regex and containing the search regex",
+            {
                 "type": "object",
                 "properties": {
                     "filter_regex": {
@@ -215,7 +204,7 @@ class SearchFiles(Tool):
                 },
                 "required": ["search_regex"],
             },
-        }
+        )
 
     async def execute(self, search_regex: str, filter_regex: str | None = None) -> str:
         proc = await asyncio.create_subprocess_exec(
@@ -252,12 +241,11 @@ class ReadFile(Tool):
         super().__init__()
         self._policy = policy
 
-    def schema(self) -> dict[str, Any]:
-        return {
-            "type": "function",
-            "name": "read_file",
-            "description": "Read the content of a file in the current working directory",
-            "parameters": {
+    def schema(self) -> ToolSchema:
+        return ToolSchema(
+            "read_file",
+            "Read the content of a file in the current working directory",
+            {
                 "type": "object",
                 "properties": {
                     "relative_path": {
@@ -267,7 +255,7 @@ class ReadFile(Tool):
                 },
                 "required": ["relative_path"],
             },
-        }
+        )
 
     async def execute(self, relative_path: str) -> str:
         if not self._policy.is_readable(relative_path):
@@ -282,12 +270,11 @@ class WriteFile(Tool):
         super().__init__()
         self._policy = write_policy
 
-    def schema(self) -> dict[str, Any]:
-        return {
-            "type": "function",
-            "name": "write_file",
-            "description": "Create or replace file in the current working directory.",
-            "parameters": {
+    def schema(self) -> ToolSchema:
+        return ToolSchema(
+            "write_file",
+            "Create or replace file in the current working directory.",
+            {
                 "type": "object",
                 "properties": {
                     "relative_path": {
@@ -301,7 +288,7 @@ class WriteFile(Tool):
                 },
                 "required": ["relative_path", "text"],
             },
-        }
+        )
 
     async def execute(self, relative_path: str, text: str) -> str:
         if not self._policy.is_writable(relative_path):
@@ -317,12 +304,11 @@ class MakeDirs(Tool):
         super().__init__()
         self._policy = write_policy
 
-    def schema(self) -> dict[str, Any]:
-        return {
-            "type": "function",
-            "name": "make_dirs",
-            "description": "Create a directory, including intermediate directories.",
-            "parameters": {
+    def schema(self) -> ToolSchema:
+        return ToolSchema(
+            "make_dirs",
+            "Create a directory, including intermediate directories.",
+            {
                 "type": "object",
                 "properties": {
                     "relative_path": {
@@ -332,7 +318,7 @@ class MakeDirs(Tool):
                 },
                 "required": ["relative_path"],
             },
-        }
+        )
 
     async def execute(self, relative_path: str) -> str:
         if not self._policy.is_writable(relative_path):
@@ -349,12 +335,11 @@ class RemovePath(Tool):
         super().__init__()
         self._policy = write_policy
 
-    def schema(self) -> dict[str, Any]:
-        return {
-            "type": "function",
-            "name": "remove_path",
-            "description": "Remove a file or directory.",
-            "parameters": {
+    def schema(self) -> ToolSchema:
+        return ToolSchema(
+            "remove_path",
+            "Remove a file or directory.",
+            {
                 "type": "object",
                 "properties": {
                     "relative_path": {
@@ -364,7 +349,7 @@ class RemovePath(Tool):
                 },
                 "required": ["relative_path"],
             },
-        }
+        )
 
     async def execute(self, relative_path: str) -> str:
         if not self._policy.is_writable(relative_path):

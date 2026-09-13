@@ -1,5 +1,7 @@
 import dataclasses
 
+from dev_tools.tools import ToolSchema
+
 
 class Session:
     def add_tool_output(self, call_id: str, output: str): ...
@@ -22,9 +24,16 @@ class Response:
 
 
 class AgentBackend:
-    def create_session(self, instructions: str | None = None) -> Session: ...
+    def create_session(
+        self,
+        model: str,
+        instructions: str | None = None,
+    ) -> Session: ...
     async def create_response(
-        self, session: Session, json_schema: dict[str, object] | None = None
+        self,
+        session: Session,
+        tools: list[ToolSchema] | None = None,
+        json_schema: dict[str, object] | None = None,
     ) -> Response: ...
 
 
