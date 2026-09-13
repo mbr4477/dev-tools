@@ -17,6 +17,11 @@ class InvalidReadWritePolicy(Exception):
         super().__init__(msg)
 
 
+def normalize_relative_path(rel_path: str) -> str:
+    abs_path = os.path.abspath(rel_path)
+    return os.path.relpath(abs_path, os.getcwd())
+
+
 class ReadWritePolicy:
     def __init__(
         self,
@@ -291,10 +296,11 @@ class WriteFile(Tool):
         )
 
     async def execute(self, relative_path: str, text: str) -> str:
-        if not self._policy.is_writable(relative_path):
-            return f"Error: {relative_path} is not writable under the ReadWritePolicy"
+        normalized = normalize_relative_path(relative_path)
+        if not self._policy.is_writable(normalized):
+            return f"Error: {normalized} is not writable under the ReadWritePolicy"
 
-        path = os.path.abspath(relative_path)
+        path = os.path.abspath(normalized)
         await write_file_async(path, text)
         return "ok"
 
@@ -321,10 +327,11 @@ class MakeDirs(Tool):
         )
 
     async def execute(self, relative_path: str) -> str:
-        if not self._policy.is_writable(relative_path):
-            return f"Error: {relative_path} is not writable under the ReadWritePolicy"
+        normalized = normalize_relative_path(relative_path)
+        if not self._policy.is_writable(normalized):
+            return f"Error: {normalized} is not writable under the ReadWritePolicy"
 
-        path = os.path.abspath(relative_path)
+        path = os.path.abspath(normalized)
         os.makedirs(path, exist_ok=True)
 
         return "ok"
@@ -352,10 +359,11 @@ class RemovePath(Tool):
         )
 
     async def execute(self, relative_path: str) -> str:
-        if not self._policy.is_writable(relative_path):
-            return f"Error: {relative_path} is not writable under the ReadWritePolicy"
+        normalized = normalize_relative_path(relative_path)
+        if not self._policy.is_writable(normalized):
+            return f"Error: {normalized} is not writable under the ReadWritePolicy"
 
-        path = os.path.abspath(relative_path)
+        path = os.path.abspath(normalized)
         if os.path.isdir(path):
             shutil.rmtree(path)
         else:

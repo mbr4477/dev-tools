@@ -193,7 +193,10 @@ async def async_main():
     args = parser.parse_args()
 
     # Create policy
-    policy = ReadWritePolicy(args.write, args.allow_write, args.read_only)
+    read_only = args.read_only or []
+    if args.write:
+        read_only.append(".agent-tools.json")
+    policy = ReadWritePolicy(args.write, args.allow_write, read_only)
 
     # Configure allowed tools
     if not args.allow_all:
@@ -212,7 +215,7 @@ async def async_main():
             MakeDirs(policy),
             RemovePath(policy),
         ]
-        system_tools.update({x.schema()["name"]: x for x in write_tools})
+        system_tools.update({x.schema().name: x for x in write_tools})
 
     tools = {**system_tools, **user_tools}
 
