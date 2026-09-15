@@ -205,6 +205,10 @@ async def async_main():
         help="json schema for model output. Objects must have `additionalProperties: false` and all properties listed in `required`.",
     )
 
+    parser.add_argument(
+        "--stdin", "-i", action="store_true", help="append stdin to prompt"
+    )
+
     args = parser.parse_args()
 
     # Create policy
@@ -246,8 +250,7 @@ async def async_main():
     elif args.prompt_file:
         prompt = await read_file_async(args.prompt_file)
 
-    # If text is piped in, append it to the prompt
-    if not sys.stdin.isatty():
+    if args.stdin:
         prompt += f"\n\n{sys.stdin.read()}"
 
     assert prompt, "No prompt provided"

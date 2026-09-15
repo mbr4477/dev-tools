@@ -58,7 +58,7 @@ class ReadWritePolicy:
         if not self.is_readable(rel_path):
             return False
 
-        return (self._write_mode and not self._is_blacklisted(rel_path)) or (
+        return not self._is_blacklisted(rel_path) or (
             not self._write_mode and self._is_whitelisted(rel_path)
         )
 

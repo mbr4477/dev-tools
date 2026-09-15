@@ -19,23 +19,89 @@ Because I couldn't think of a better name.
 
 ## Installation
 
+> Requires [uv](https://docs.astral.sh/uv/getting-started/installation/) package manager
+
 ```shell
 uv tool install --editable .
 ```
 
 ## Usage
 
+See the full set of CLI options with `run_agent -h`.
+
+### Read-Only Mode
+
+The agent defaults to read-only mode.
+The current directory is readable and no filesystem write tools are provided to the model.
+
+```shell
+run_agent \
+  --model openai/gpt-5.6-luna \
+  --instructions "You are a coding agent." \
+  --prompt "Explain this codebase in 3-5 bullets"
+```
+
+When in read-only mode, specify paths or files can be whitelisted with one or more `--allow-write` arguments to allow restricted writes.
+
+```shell
+run_agent \
+  --model openai/gpt-5.6-luna \
+  --instructions "You are a coding agent." \
+  --prompt "Generate installation instructions in docs/INSTALL.md" \
+  --allow-write docs
+```
+
+> [!note]
+> Writes outside the working directory cannot be whitelisted and are *always* blocked.
+
+### Write Mode
+
+Add the `--write` to invert the filesystem policy&mdash;the entire working directory becomes writable, and specific paths and files can be blocked with one or more `--read-only` arguments.
+
+```shell
+run_agent \
+  --model openai/gpt-5.6-luna \
+  --instructions "You are a coding agent." \
+  --prompt "Generate installation instructions in docs/INSTALL.md" \
+  --write \
+  --read-only src
+```
+
+> [!note]
+> `.agent-tools.json` in the working directory is always read-only
+> to prevent the agent from creating tools as a backdoor to disallowed actions in future turns.
+
+### Piped Prompts
+
+Use the `--stdin` option to append `stdin` to any other supplied prompt:
+
+```
+clang-tidy -p build src/main.cpp | run_agent \
+  --model openai/gpt-5.6-luna \
+  --instructions "You are a coding agent." \
+  --prompt "Fix these clang-tidy findings: " \
+  --allow-write src
+```
+
+### Structured Output
+
+- TODO
+
+## Custom Agent Tools
+
 - TODO
 
 ## Backends
 
+Use OpenAI and Anthropic model endpoints to the `--model` argument using `<backend>/<model identifier>`.
+
 ### OpenAI
 
-- TODO
+Enable the OpenAI backend with a model string like `openai/<model identifier>`. Set `OPENAI_API_KEY` with your API key and use `OPENAI_BASE_URL` to configure a custom endpoint.
 
 ### Anthropic
 
-- TODO
+Enable the Anthropic backend with a model string like `anthropic/<model identifier>`. Set `ANTHROPIC_API_KEY` with your API key and use `ANTHROPIC_BASE_URL` to configure a custom endpoint.
 
 ## Roadmap
 
