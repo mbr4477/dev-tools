@@ -75,7 +75,7 @@ run_agent \
 
 Use the `--stdin` option to append `stdin` to any other supplied prompt:
 
-```
+```shell
 clang-tidy -p build src/main.cpp | run_agent \
   --model openai/gpt-5.6-luna \
   --instructions "You are a coding agent." \
@@ -85,11 +85,50 @@ clang-tidy -p build src/main.cpp | run_agent \
 
 ### Structured Output
 
-- TODO
+Use a [JSON Schema](https://json-schema.org/docs) to request structured output:
+
+```shell
+clang-tidy -p build src/main.cpp | run_agent \
+  --model anthropic/claude-haiku-4-5-20251001 \
+  --instructions "You are a coding agent." \
+  --prompt "Fix these clang-tidy findings. Report the number of successful fixes. List findings you couldn't or didn't attempt to fix and why." \
+  --allow-write src \
+  --json-schema '{"type":"object","properties":{"fixCount":{"type":"number"},"skipped":{"type":"array","items":{"type":"object","properties":{"finding":{"type":"string"},"reason":{"type":"string"}},"additionalProperties":false,"required":["finding","reason"]}}},"additionalProperties":false,"required":["fixCount","skipped"]}'\
+```
 
 ## Custom Agent Tools
 
-- TODO
+Define custom agent tools in `.agent-tools.json` in the working directory:
+
+```json
+[
+  {
+    "program": "cmake",
+    "args": [
+      "-S",
+      ".",
+      "--preset={preset}"
+    ],
+    "schema": {
+      "name": "cmake_configure_preset",
+      "description": "Configure the CMake project for a preset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "preset": {
+            "type": "string",
+            "description": "The CMake preset to configure."
+          }
+        },
+        "additionalProperties": false,
+        "required": ["preset"]
+      }
+    }
+  }
+]
+```
+
+Tools default to disabled. Enable individual tools with `--allow`. Enable all tools with `--allow-all`.
 
 ## Backends
 
