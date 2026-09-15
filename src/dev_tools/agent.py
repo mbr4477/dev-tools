@@ -209,6 +209,13 @@ async def async_main():
         "--stdin", "-i", action="store_true", help="append stdin to prompt"
     )
 
+    parser.add_argument(
+        "--force",
+        "-f",
+        action="store_true",
+        help="force run even if backend reports incomplete configuration",
+    )
+
     args = parser.parse_args()
 
     # Create policy
@@ -258,6 +265,13 @@ async def async_main():
 
     backend_name, model = args.model.split("/", 1)
     backend = backends[backend_name]()
+
+    if errors := backend.config_errors():
+        if args.force:
+            print(f"WARNING: {', '.join(errors)}", file=sys.stderr)
+        else:
+            print(f"ERROR: {', '.join(errors)}", file=sys.stderr)
+            sys.exit(1)
 
     await Agent(
         backend,

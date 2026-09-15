@@ -1,4 +1,5 @@
 import json
+import os
 
 from openai import AsyncOpenAI
 from openai.types.responses import ResponseOutputItem
@@ -57,7 +58,13 @@ class OpenAIBackend(AgentBackend):
         base_url: str | None = None,
     ):
         super().__init__()
+        self._config_errors = []
+        if base_url is None and "OPENAI_BASE_URL" not in os.environ:
+            self._config_errors.append("Missing OPENAI_BASE_URL")
         self._client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+
+    def config_errors(self) -> list[str]:
+        return self._config_errors
 
     def create_session(self, model: str, instructions: str | None = None) -> Session:
         return OpenAISession(model, instructions)
