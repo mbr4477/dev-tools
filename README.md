@@ -41,7 +41,7 @@ run_agent \
   --prompt "Explain this codebase in 3-5 bullets"
 ```
 
-When in read-only mode, specify paths or files can be whitelisted with one or more `--allow-write` arguments to allow restricted writes.
+When in read-only mode, whitelist paths or files with one or more `--allow-write` arguments to allow restricted writes.
 
 ```shell
 run_agent \
@@ -56,7 +56,7 @@ run_agent \
 
 ### Write Mode
 
-Add the `--write` to invert the filesystem policy&mdash;the entire working directory becomes writable, and specific paths and files can be blocked with one or more `--read-only` arguments.
+Add the `--write` option to invert the filesystem policy&mdash;the entire working directory becomes writable, and specific paths and files can be blocked with one or more `--read-only` arguments.
 
 ```shell
 run_agent \
@@ -132,15 +132,15 @@ Tools default to disabled. Enable individual tools with `--allow`. Enable all to
 
 ## Backends
 
-Use OpenAI and Anthropic model endpoints to the `--model` argument using `<backend>/<model identifier>`.
+Select OpenAI or Anthropic endpoints by changing the model string prefix: `<backend>/<model identifier>`.
 
 ### OpenAI
 
-Enable the OpenAI backend with a model string like `openai/<model identifier>`. Set `OPENAI_API_KEY` with your API key and use `OPENAI_BASE_URL` to configure a custom endpoint.
+Enable the OpenAI backend with a model string like `openai/<model identifier>`. Set `OPENAI_API_KEY` with your API key and use `OPENAI_BASE_URL` to specify a custom endpoint.
 
 ### Anthropic
 
-Enable the Anthropic backend with a model string like `anthropic/<model identifier>`. Set `ANTHROPIC_API_KEY` with your API key and use `ANTHROPIC_BASE_URL` to configure a custom endpoint.
+Enable the Anthropic backend with a model string like `anthropic/<model identifier>`. Set `ANTHROPIC_API_KEY` with your API key and use `ANTHROPIC_BASE_URL` to specify a custom endpoint.
 
 ## Roadmap
 
