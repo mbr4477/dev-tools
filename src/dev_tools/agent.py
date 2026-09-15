@@ -7,8 +7,6 @@ from rich.console import Console
 from rich.markdown import Markdown
 
 from dev_tools.backends import AgentBackend
-from dev_tools.backends.anthropic import AnthropicBackend
-from dev_tools.backends.openai import OpenAIBackend
 from dev_tools.file_async import read_file_async
 from dev_tools.tools import Tool
 
@@ -110,6 +108,20 @@ class Agent:
                     working = True
 
 
+# Create factories to wrap the imports
+# The Anthropic import takes a longer than typical time
+def _anthropic_backend_factory() -> AgentBackend:
+    from .backends.anthropic import AnthropicBackend
+
+    return AnthropicBackend()
+
+
+def _openai_backend_factory() -> AgentBackend:
+    from .backends.openai import OpenAIBackend
+
+    return OpenAIBackend()
+
+
 async def async_main():
     import argparse
 
@@ -132,7 +144,10 @@ async def async_main():
     else:
         user_tools = {}
 
-    backends = {"openai": OpenAIBackend(), "anthropic": AnthropicBackend()}
+    backends = {
+        "openai": _openai_backend_factory,
+        "anthropic": _anthropic_backend_factory,
+    }
 
     parser = argparse.ArgumentParser()
     write_group = parser.add_mutually_exclusive_group(required=False)
@@ -239,7 +254,7 @@ async def async_main():
     prompt = prompt.strip()
 
     backend_name, model = args.model.split("/", 1)
-    backend = backends[backend_name]
+    backend = backends[backend_name]()
 
     await Agent(
         backend,
