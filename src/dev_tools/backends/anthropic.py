@@ -1,4 +1,5 @@
 import json
+import os
 
 from anthropic import AsyncAnthropic, Omit
 
@@ -63,7 +64,14 @@ class AnthropicBackend(AgentBackend):
         base_url: str | None = None,
     ):
         super().__init__()
+        self._errors = []
+        if base_url is None and "ANTHROPIC_BASE_URL" not in os.environ:
+            self._errors.append("Missing ANTHROPIC_BASE_URL")
+
         self._client = AsyncAnthropic(api_key=api_key, base_url=base_url)
+
+    def errors(self) -> list[str]:
+        return self._errors
 
     def create_session(self, model: str, instructions: str | None = None) -> Session:
         return AnthropicSession(model, instructions)

@@ -35,6 +35,7 @@ class AgentBackend:
         tools: list[ToolSchema] | None = None,
         json_schema: dict[str, object] | None = None,
     ) -> Response: ...
+    def errors(self) -> list[str]: ...
 
 
 class InvalidSession(Exception):
