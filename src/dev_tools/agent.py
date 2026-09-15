@@ -213,7 +213,7 @@ async def async_main():
         "--force",
         "-f",
         action="store_true",
-        help="force run even if backend reports incomplete configuration",
+        help="force run even if backend reports errors",
     )
 
     args = parser.parse_args()
