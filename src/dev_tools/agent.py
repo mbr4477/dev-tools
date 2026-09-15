@@ -266,7 +266,7 @@ async def async_main():
     backend_name, model = args.model.split("/", 1)
     backend = backends[backend_name]()
 
-    if errors := backend.config_errors():
+    if errors := backend.errors():
         if args.force:
             print(f"WARNING: {', '.join(errors)}", file=sys.stderr)
         else:
