@@ -1,9 +1,7 @@
 [project]
-name = "impl-worker"
+name = "workers"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.14"
-dependencies = [
-    "hatchet-sdk>=1.40.1",
-]
+dependencies = ["docker>=7.2.0", "hatchet-sdk>=1.40.1"]
