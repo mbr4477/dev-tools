@@ -1,0 +1,11 @@
+--- diff_cases/a_3.txt	2026-10-10 16:28:47
++++ diff_cases/b_3.txt	2026-10-10 16:28:59
+@@ -2,7 +2,7 @@
+ project(example)
+ 
+ set(CMAKE_CXX_STANDARD 17)
+-set(CMAKE_CXX_EXTENSIONS OFF)
++set(CMAKE_CXX_EXTENSIONS ON)
+ set(CMAKE_CXX_STANDARD_REQUIRED ON)
+ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+ 

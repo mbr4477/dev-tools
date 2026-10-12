@@ -1,0 +1,22 @@
+cmake_minimum_required(VERSION 3.21)
+project(example)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_EXTENSIONS ON)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+add_executable(${PROJECT}
+    src/main.cpp
+    src/coffee_calculator.cpp
+)
+
+enable_testing()
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/coffee_calculator_test.cpp")
+    add_executable(coffee_calculator_test
+        coffee_calculator_test.cpp
+        src/coffee_calculator.cpp
+    )
+    target_include_directories(coffee_calculator_test PRIVATE src)
+    add_test(NAME coffee_calculator_test COMMAND coffee_calculator_test)
+endif()

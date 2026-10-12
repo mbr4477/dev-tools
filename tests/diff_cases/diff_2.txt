@@ -1,0 +1,11 @@
+--- diff_cases/a_2.txt	2026-10-10 16:16:59
++++ diff_cases/b_2.txt	2026-10-10 16:17:22
+@@ -3,7 +3,7 @@
+ Line 3
+ Line 4
+ This line stays.
+-This line changes.
++This line has changed.
+ This line stays.
+ Line +1
+ Line +2

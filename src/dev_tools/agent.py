@@ -1,3 +1,4 @@
+import argparse
 import asyncio
 import json
 import os
@@ -8,7 +9,19 @@ from rich.markdown import Markdown
 
 from dev_tools.backends import AgentBackend
 from dev_tools.file_async import read_file_async
-from dev_tools.tools import Tool
+from dev_tools.tools import (
+    EditFile,
+    ListFiles,
+    MakeDirs,
+    ReadFile,
+    ReadWritePolicy,
+    RemovePath,
+    SearchFiles,
+    Tool,
+    UserTool,
+    UserToolDef,
+    WriteFile,
+)
 
 
 class Agent:
@@ -123,20 +136,6 @@ def _openai_backend_factory() -> AgentBackend:
 
 
 async def async_main():
-    import argparse
-
-    from dev_tools.tools import (
-        ListFiles,
-        MakeDirs,
-        ReadFile,
-        ReadWritePolicy,
-        RemovePath,
-        SearchFiles,
-        UserTool,
-        UserToolDef,
-        WriteFile,
-    )
-
     if os.path.exists(".agent-tools.json"):
         content = json.loads(await read_file_async(".agent-tools.json"))
         tool_defs = [UserToolDef.from_dict(x) for x in content]
@@ -157,6 +156,11 @@ async def async_main():
         action="append",
         type=str,
         help="whitelist a path as writable in the default read-only mode",
+    )
+    parser.add_argument(
+        "--experimental-edit",
+        action="store_true",
+        help="enable the experiment edit tool which can reduce output token usage.",
     )
     parser.add_argument(
         "--read-only",
@@ -241,6 +245,8 @@ async def async_main():
             MakeDirs(policy),
             RemovePath(policy),
         ]
+        if args.experimental_edit:
+            write_tools.append(EditFile(policy))
         system_tools.update({x.schema().name: x for x in write_tools})
 
     tools = {**system_tools, **user_tools}

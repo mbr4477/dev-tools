@@ -1,0 +1,10 @@
+Hello, World!
+
+This is the file.
+This is from the source file.
+There is no newline at the end of the source.
+It should not be shown in the changes
+because it is very long and not required.
+It needs to be long enough
+that the diff would not be compressed
+by showing these details.

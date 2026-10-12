@@ -10,6 +10,7 @@ from typing import Any
 import jsonschema
 
 from dev_tools.file_async import read_file_async, write_file_async
+from dev_tools.unified_diff import apply_fuzzy_changes, parse_unified_diff
 
 
 class InvalidReadWritePolicy(Exception):
@@ -278,7 +279,7 @@ class WriteFile(Tool):
     def schema(self) -> ToolSchema:
         return ToolSchema(
             "write_file",
-            "Create or replace file in the current working directory.",
+            "Create or replace file in the current working directory. This should be used only when a file is being created or replaced with entirely new content.",
             {
                 "type": "object",
                 "properties": {
@@ -302,6 +303,46 @@ class WriteFile(Tool):
 
         path = os.path.abspath(normalized)
         await write_file_async(path, text)
+        return "ok"
+
+
+class EditFile(Tool):
+    def __init__(self, write_policy: ReadWritePolicy):
+        super().__init__()
+        self._policy = write_policy
+
+    def schema(self) -> ToolSchema:
+        return ToolSchema(
+            "edit_file",
+            "Edit a single file in the current working directory by applying a unified diff. The diff must have the same from-file and to-file. Hunks are applied with fuzzy matching and replacement. Enough context must be provided for unambiguous replacement.",
+            {
+                "type": "object",
+                "properties": {
+                    "unified_diff": {
+                        "type": "string",
+                        "description": "The unified diff to apply to a single file",
+                    },
+                },
+                "required": ["unified_diff"],
+            },
+        )
+
+    async def execute(self, unified_diff: str) -> str:
+        diff = parse_unified_diff(unified_diff)
+        if diff.header.from_file.removeprefix("a/") != diff.header.to_file.removeprefix(
+            "b/"
+        ):
+            return "Error: diff from-file must exactly match to-file"
+
+        relative_path = diff.header.from_file.removeprefix("a/")
+        normalized = normalize_relative_path(relative_path)
+        if not self._policy.is_writable(normalized):
+            return f"Error: {normalized} is not writable under the ReadWritePolicy"
+
+        path = os.path.abspath(normalized)
+        content = await read_file_async(path)
+        content = apply_fuzzy_changes(content, [h.lines for h in diff.hunks])
+        await write_file_async(path, content)
         return "ok"
 
 
